@@ -10,3 +10,5 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -Wall -O2")
 
 set(SOURCE_FILES main.c)
 add_executable(openmp ${SOURCE_FILES})
+
+target_link_libraries(openmp m)

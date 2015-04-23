@@ -4,6 +4,8 @@
 #include <string.h>
 #include <time.h>
 
+#include <bits/time.h>
+
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_FAILURE_USERMSG
 #include "stb_image.h"
@@ -146,16 +148,16 @@ int image() {
 
     struct timespec start, finish;
     double elapsed;
-    clock_gettime(CLOCK_MONOTONIC, &start);
+    timespec_get(&start, TIME_UTC);
     sharpen(data, x, y, n);
-    clock_gettime(CLOCK_MONOTONIC, &finish);
+    timespec_get(&finish, TIME_UTC);
     elapsed = (finish.tv_sec - start.tv_sec);
     elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
     printf("sharpen iterative: %f\n", elapsed);
 
-    clock_gettime(CLOCK_MONOTONIC, &start);
+    timespec_get(&start, TIME_UTC);
     sharpen2(data, x, y, n);
-    clock_gettime(CLOCK_MONOTONIC, &finish);
+    timespec_get(&finish, TIME_UTC);
     elapsed = (finish.tv_sec - start.tv_sec);
     elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
     printf("sharpen threaded: %f\n", elapsed);
