@@ -131,13 +131,21 @@ int sharpen2(unsigned char *data, int x, int y, int n){
             }
         }
     }
+<<<<<<< HEAD
     memcpy(data, result, (size_t) x * y * n);
     free(result);
+=======
+    //memcpy(data, result, (size_t) x * y * n);
+>>>>>>> d846baa... Implemented sharpen function
     return 0;
 }
 int image() {
     int x,y,n;
+<<<<<<< HEAD
     unsigned char *data = stbi_load("Lenna.png", &x, &y, &n, 0);
+=======
+    unsigned char *data = stbi_load("Tolworth.jpg", &x, &y, &n, 0);
+>>>>>>> d846baa... Implemented sharpen function
     if (data == NULL) {
         printf("%s\n", stbi_failure_reason());
         return -1;
@@ -160,10 +168,18 @@ int image() {
     elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
     printf("sharpen threaded: %f\n", elapsed);
 
+<<<<<<< HEAD
     if (stbi_write_png("out.png", x, y, n, data, 0) == 0){
         perror("Error saving file");
         return -1;
     }
+=======
+    /*
+    if (stbi_write_png("out.png", x, y, n, data, 0) == 0){
+        perror("Error saving file");
+        return -1;
+    }*/
+>>>>>>> d846baa... Implemented sharpen function
     stbi_image_free(data);
     return 0;
 }
