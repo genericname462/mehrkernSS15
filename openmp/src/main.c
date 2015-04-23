@@ -92,82 +92,6 @@ int solve_jacobi_threaded(double *matrix, size_t n, size_t m, double *b, double 
     return 0;
 }
 
-int sharpen(unsigned char *data, int x, int y, int n){
-    unsigned char *result = malloc((size_t) x * y * n);
-    memcpy(result, data, (size_t) x * y * n);
-    for (int yj = 1; yj < y-1; ++yj) {
-        for (int xi = 1; xi < x-1; ++xi) {
-            for (int c = 0; c < n; ++c) {
-                signed int sum;
-                sum = -1 * (signed int) data[(yj-1) * x * n + (xi-1) * n + c] + -1 * (signed int) data[(yj-1) * x * n + (xi) * n + c] + -1 * (signed int) data[(yj-1) * x * n + (xi+1) * n + c] +
-                       -1 * (signed int) data[(yj) * x * n + (xi-1) * n + c] + 9 * (signed int) data[(yj) * x * n + (xi) * n + c] + -1 * (signed int) data[(yj) * x * n + (xi+1) * n + c] +
-                       -1 * (signed int) data[(yj+1) * x * n + (xi-1) * n + c] + -1 * (signed int) data[(yj+1) * x * n + (xi) * n + c] + -1 * (signed int) data[(yj+1) * x * n + (xi+1) * n + c];
-
-                // Set stuff
-                result[(yj * x * n) + (xi * n) + c] = (unsigned char) CLAMP(sum, 0, 255);
-            }
-        }
-    }
-    memcpy(data, result, (size_t) x * y * n);
-    return 0;
-}
-
-int sharpen2(unsigned char *data, int x, int y, int n){
-    unsigned char *result = malloc((size_t) x * y * n);
-    memcpy(result, data, (size_t) x * y * n);
-    int yj, xi, c;
-    #pragma omp parallel for shared(result) private(yj,xi,c)
-    for (yj = 1; yj < y-1; ++yj) {
-        for (xi = 1; xi < x-1; ++xi) {
-            for (c = 0; c < n; ++c) {
-                // Apply kernel
-                signed int sum;
-                sum = -1 * (signed int) data[(yj-1) * x * n + (xi-1) * n + c] + -1 * (signed int) data[(yj-1) * x * n + (xi) * n + c] + -1 * (signed int) data[(yj-1) * x * n + (xi+1) * n + c] +
-                      -1 * (signed int) data[(yj) * x * n + (xi-1) * n + c] + 9 * (signed int) data[(yj) * x * n + (xi) * n + c] + -1 * (signed int) data[(yj) * x * n + (xi+1) * n + c] +
-                      -1 * (signed int) data[(yj+1) * x * n + (xi-1) * n + c] + -1 * (signed int) data[(yj+1) * x * n + (xi) * n + c] + -1 * (signed int) data[(yj+1) * x * n + (xi+1) * n + c];
-
-                // Set stuff
-                result[(yj * x * n) + (xi * n) + c] = (unsigned char) CLAMP(sum, 0, 255);
-            }
-        }
-    }
-    memcpy(data, result, (size_t) x * y * n);
-    free(result);
-    return 0;
-}
-int image() {
-    int x,y,n;
-    unsigned char *data = stbi_load("Lena.png", &x, &y, &n, 0);
-    if (data == NULL) {
-        printf("%s\n", stbi_failure_reason());
-        return -1;
-    }
-    printf("x:%i,y:%i,comp:%i\n", x,y,n);
-
-    struct timespec start, finish;
-    double elapsed;
-    timespec_get(&start, TIME_UTC);
-    sharpen(data, x, y, n);
-    timespec_get(&finish, TIME_UTC);
-    elapsed = (finish.tv_sec - start.tv_sec);
-    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
-    printf("sharpen iterative: %f\n", elapsed);
-
-    timespec_get(&start, TIME_UTC);
-    sharpen2(data, x, y, n);
-    timespec_get(&finish, TIME_UTC);
-    elapsed = (finish.tv_sec - start.tv_sec);
-    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
-    printf("sharpen threaded: %f\n", elapsed);
-
-    if (stbi_write_png("out.png", x, y, n, data, 0) == 0){
-        perror("Error saving file");
-        return -1;
-    }
-    stbi_image_free(data);
-    return 0;
-}
-
 int jac() {
     size_t n, m;
     n = 2;
@@ -218,7 +142,70 @@ int jac() {
     return 0;
 }
 
+int sharpen(unsigned char *data, unsigned char *output, int x, int y, int n, int p){
+    memcpy(output, data, (size_t) x * y * n);
+    int yj, xi, c;
+    signed int sum;
+    #pragma omp parallel if(p) shared(output) private(yj,xi,c,sum)
+    #pragma omp for
+    for (yj = 1; yj < y-1; ++yj) {
+        for (xi = 1; xi < x-1; ++xi) {
+            for (c = 0; c < n; ++c) {
+                // Apply kernel
+                sum = -1 * (signed int) data[(yj-1) * x * n + (xi-1) * n + c] + -1 * (signed int) data[(yj-1) * x * n + (xi) * n + c] + -1 * (signed int) data[(yj-1) * x * n + (xi+1) * n + c] +
+                      -1 * (signed int) data[(yj) * x * n + (xi-1) * n + c] + 9 * (signed int) data[(yj) * x * n + (xi) * n + c] + -1 * (signed int) data[(yj) * x * n + (xi+1) * n + c] +
+                      -1 * (signed int) data[(yj+1) * x * n + (xi-1) * n + c] + -1 * (signed int) data[(yj+1) * x * n + (xi) * n + c] + -1 * (signed int) data[(yj+1) * x * n + (xi+1) * n + c];
+
+                // Set stuff
+                output[(yj * x * n) + (xi * n) + c] = (unsigned char) CLAMP(sum, 0, 255);
+            }
+        }
+    }
+    return 0;
+}
+
+int image(char *path) {
+    int x,y,n;
+    unsigned char *data = stbi_load(path, &x, &y, &n, 0);
+    if (data == NULL) {
+        printf("%s\n", stbi_failure_reason());
+        return -1;
+    }
+    printf("x:%i,y:%i,composite layers:%i\n", x,y,n);
+
+    unsigned char *output = malloc((size_t) x * y * n);
+
+    struct timespec start, finish;
+    double elapsed;
+
+    clock_gettime(CLOCK_REALTIME, &start);
+    sharpen(data, output, x, y, n, 0);
+    clock_gettime(CLOCK_REALTIME, &finish);
+    elapsed = (finish.tv_sec - start.tv_sec);
+    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    printf("sharpen iterative:\t%f\n", elapsed);
+
+    clock_gettime(CLOCK_REALTIME, &start);
+    sharpen(data, output, x, y, n, 1);
+    clock_gettime(CLOCK_REALTIME, &finish);
+    elapsed = (finish.tv_sec - start.tv_sec);
+    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    printf("sharpen threaded:\t%f\n", elapsed);
+
+    if (stbi_write_png("out.png", x, y, n, output, 0) == 0){
+        perror("Error saving file");
+        return -1;
+    }
+    stbi_image_free(data);
+    free(output);
+    return 0;
+}
+
 int main(int argc, char *argv[]) {
-    //jac();
-    return image();
+    if(argc < 2) {
+        printf("Specify path to image!");
+        return -1;
+    }
+    printf("Max threads: %i\n", omp_get_max_threads());
+    return image(argv[1]);
 }
