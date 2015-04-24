@@ -201,11 +201,89 @@ int image(char *path) {
     return 0;
 }
 
+int solve_maze(unsigned char *data, unsigned char *output, int x, int y, int n, int p) {
+    //assume only red component, therefore c will be 0
+    unsigned char wall = 0; //black
+    unsigned char path = 255; //white
+
+    //Pixel format on little endian: [ALPHA | BLUE | GREEN | RED ]
+    u_int32_t *bigdata;
+    bigdata = (u_int32_t*) data;
+
+    u_int32_t *bigout;
+    bigout = (u_int32_t*) output;
+
+    //memcpy(output, data, (size_t) x * y * n);
+
+    //find start and end
+    int entry = -1;
+    int exit = -1;
+    for (int j = 0; j < y; ++j) {
+        for (int i = 0; i < x; ++i) {
+            if (i == 0 || j == 0 || i == x-1 || j == y-1) {
+                if (bigdata[j * x + i] == 0xffffffff) {
+                    if (entry == -1) {
+                        entry = j * x + i;
+                        bigout[j * x + i] = 0xff0000ff;
+                    } else {
+                        exit = j * x + i;
+                        bigout[j * x + i] = 0xff00ff00;
+                    }
+                }
+            }
+        }
+    }
+    printf("entry: %i\texit: %i\n", entry, exit);
+
+    //Algorithm
+    
+
+    return 0;
+}
+
+int maze_demo(char *path) {
+    int x,y,n;
+    unsigned char *data = stbi_load(path, &x, &y, &n, 0);
+    if (data == NULL) {
+        printf("%s\n", stbi_failure_reason());
+        return -1;
+    }
+    printf("x:%i,y:%i,composite layers:%i\n", x,y,n);
+
+    unsigned char *output = calloc((size_t) x * y * n, 1);
+
+    struct timespec start, finish;
+    double elapsed;
+
+    clock_gettime(CLOCK_REALTIME, &start);
+    solve_maze(data, output, x, y, n, 0);
+    clock_gettime(CLOCK_REALTIME, &finish);
+    elapsed = (finish.tv_sec - start.tv_sec);
+    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    printf("maze iterative:\t%f\n", elapsed);
+
+//    clock_gettime(CLOCK_REALTIME, &start);
+//    solve_maze(data, output, x, y, n, 1);
+//    clock_gettime(CLOCK_REALTIME, &finish);
+//    elapsed = (finish.tv_sec - start.tv_sec);
+//    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+//    printf("maze threaded:\t%f\n", elapsed);
+
+    if (stbi_write_png("solution_maze.png", x, y, n, output, 0) == 0){
+        perror("Error saving file");
+        return -1;
+    }
+    stbi_image_free(data);
+    free(output);
+    return 0;
+}
+
 int main(int argc, char *argv[]) {
     if(argc < 2) {
         printf("Specify path to image!");
         return -1;
     }
     printf("Max threads: %i\n", omp_get_max_threads());
-    return image(argv[1]);
+    //return image(argv[1]);
+    return maze_demo(argv[1]);
 }
