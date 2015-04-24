@@ -151,11 +151,11 @@ int jac() {
     return 0;
 }
 
-int sharpen(unsigned char *data, unsigned char *output, int x, int y, int n, int p){
+int sharpen(unsigned char *data, unsigned char *output, int x, int y, int n, int parallel){
     memcpy(output, data, (size_t) x * y * n);
     int yj, xi, c;
     signed int sum;
-    #pragma omp parallel if(p) shared(output) private(yj,xi,c,sum)
+    #pragma omp parallel if(parallel) shared(output) private(yj,xi,c,sum)
     #pragma omp for
     for (yj = 1; yj < y-1; ++yj) {
         for (xi = 1; xi < x-1; ++xi) {
@@ -173,7 +173,7 @@ int sharpen(unsigned char *data, unsigned char *output, int x, int y, int n, int
     return 0;
 }
 
-int image(char *path) {
+int image(char *path, int save) {
     int x,y,n;
     unsigned char *data = stbi_load(path, &x, &y, &n, 0);
     if (data == NULL) {
@@ -201,7 +201,7 @@ int image(char *path) {
     elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
     printf("sharpen threaded:\t%f\n", elapsed);
 
-    if (stbi_write_png("out.png", x, y, n, output, 0) == 0){
+    if (save && stbi_write_png("image_sharpen.png", x, y, n, output, 0) == 0){
         perror("Error saving file");
         return -1;
     }
@@ -210,7 +210,7 @@ int image(char *path) {
     return 0;
 }
 
-int solve_maze(unsigned char *data, unsigned char *output, int x, int y, int n, int p) {
+int solve_maze(unsigned char *data, unsigned char *output, int x, int y, int n, int parallel) {
     uint32_t wall = 0xff000000;    //black
     uint32_t path = 0xffffffff;    //white
 
@@ -254,7 +254,7 @@ int solve_maze(unsigned char *data, unsigned char *output, int x, int y, int n, 
 
     push(sp, entry);
     omp_set_num_threads(1);
-    //#pragma omp parallel if(p) default(shared) private(v)
+    //#pragma omp parallel if(parallel) default(shared) private(v)
     {
         while (sp >= sbp) {
             //test if not visited already
@@ -322,18 +322,23 @@ int solve_maze(unsigned char *data, unsigned char *output, int x, int y, int n, 
     return 0;
 }
 
-int solve_maze2(unsigned char *data, unsigned char *output, int x, int y, int n, int p) {
+int solve_maze_deadend_elim(unsigned char *data, unsigned char *output, int x, int y, int n, int p) {
     uint32_t wall = 0xff000000;    //black
     uint32_t path = 0xffffffff;    //white
 
     //Pixel format on little endian: [ALPHA | BLUE | GREEN | RED ]
-    uint32_t *bigdata;
-    bigdata = (uint32_t*) data;
 
     uint32_t *bigout;
     bigout = (uint32_t*) output;
 
     memcpy(output, data, (size_t) x * y * n);
+
+    uint32_t (*out_m)[y][x];
+    out_m = (void*) output;
+    printf("out_m:%x\noutput:%i %i %i %i\n", (*out_m)[0][0], output[0], output[1], output[2], output[3]);
+    //(*out_m)[1][0] = 0xff00abcd;
+    //(*out_m)[0][1] = 0xff0000ff;
+    printf("out_m:%x\noutput:%i %i %i %i\n", (*out_m)[0][0], output[0], output[1], output[2], output[3]);
 
     //Find entry and exit
     //TODO: unlimit image size. MAX_INT at the moment
@@ -345,10 +350,10 @@ int solve_maze2(unsigned char *data, unsigned char *output, int x, int y, int n,
                 if (bigout[j * x + i] == path) {
                     if (entry == -1) {
                         entry = j * x + i;
-                        bigout[j * x + i] = 0xff0000ff; //red
+                        //bigout[j * x + i] = 0xff0000ff; //red
                     } else {
                         exit = j * x + i;
-                        bigout[j * x + i] = 0xffffff00; //cyan
+                        //bigout[j * x + i] = 0xffffff00; //cyan
                         break;
                     }
                 }
@@ -358,83 +363,45 @@ int solve_maze2(unsigned char *data, unsigned char *output, int x, int y, int n,
     printf("entry: %i\texit: %i\n", entry, exit);
 
     //Algorithm
-    int max_size = x * y;
-    int stack[100000]; //Fix later, also mark access as critical
-    int *sbp = stack;
-    int *sp = stack;
-    int v;
-
-    push(sp, entry);
-    omp_set_num_threads(1);
-    //#pragma omp parallel if(p) default(shared) private(v)
-    {
-        while (sp >= sbp) {
-            //test if not visited already
-            //#pragma omp critical (access_stack)
-            {
-                v = pop(sp);
-            }
-            //printf("current pos: %i\n", v);
-            if (bigout[v] == path || bigout[v] == 0xff0000ff) {
-                //printf("%i not visited!\n", v);
-                //bigout[v] = visited;
-                //#pragma omp critical (access_image)
-                {
-                    bigout[v] = color_map[omp_get_thread_num()];
-                }
-                //push all adjacent paths to the stack
-                if (v + 1 >= 0 && v + 1 < max_size && bigout[v + 1] != wall) { //EAST
-                    if (bigout[v + 1] == 0xffffff00) {
-                        printf("Found exit: %i\n", v + 1);
-                        break;
+    int max_size = x*y;
+    int done = 1;
+    int count = 0;
+    while (done) {
+        done = 0;
+        ++count;
+        for (int j = 1; j < y-1; ++j) {
+            for (int i = 1; i < x-1; ++i) {
+                if ((*out_m)[j][i] == path) {
+                    int ends = 0;
+                    if ((*out_m)[j][i+1] == wall) {
+                        ++ends;
                     }
-                    //printf("East free!\n");
-                    //#pragma omp critical (access_stack)
-                    {
-                        push(sp, v + 1);
+                    if ((*out_m)[j+1][i] == wall) {
+                        ++ends;
                     }
-                }
-                if (v + x >= 0 && v + x <= max_size && bigout[v + x] != wall) { //SOUTH
-                    if (bigout[v + x] == 0xffffff00) {
-                        printf("Found exit: %i\n", v + x);
-                        break;
+                    if ((*out_m)[j][i-1] == wall) {
+                        ++ends;
                     }
-                    //printf("South free!\n");
-                    //#pragma omp critical (access_stack)
-                    {
-                        push(sp, v + x);
+                    if ((*out_m)[j-1][i] == wall) {
+                        ++ends;
                     }
-                }
-                if (v - 1 >= 0 && v - 1 < max_size && bigout[v - 1] != wall) { //WEST
-                    if (bigout[v - 1] == 0xffffff00) {
-                        printf("Found exit: %i\n", v - 1);
-                        break;
-                    }
-                    //printf("West free!\n");
-                    //#pragma omp critical (access_stack)
-                    {
-                        push(sp, v - 1);
-                    }
-                }
-                if (v - x >= 0 && v - x < max_size && bigout[v - x] != wall) { //NORTH
-                    if (bigout[v - x] == 0xffffff00) {
-                        printf("Found exit: %i\n", v - x);
-                        break;
-                    }
-                    //printf("North free!\n");
-                    //#pragma omp critical (access_stack)
-                    {
-                        push(sp, v - x);
+                    if (ends >= 3) {
+                        //printf("Dead end found!\n");
+                        (*out_m)[j][i] = wall;
+                        done = 1;
                     }
                 }
             }
         }
+        if (count % 250 == 0) {
+            printf("At %i-th iteration of %i\n", count, max_size);
+            stbi_write_png("solution_maze.png", x, y, n, output, 0);
+        }
     }
-
     return 0;
 }
 
-int maze_demo(char *path) {
+int maze_demo(char *path, int save) {
     int x,y,n;
     unsigned char *data = stbi_load(path, &x, &y, &n, 4);
     if (data == NULL) {
@@ -449,7 +416,8 @@ int maze_demo(char *path) {
     double elapsed;
 
     clock_gettime(CLOCK_REALTIME, &start);
-    solve_maze(data, output, x, y, n, 0);
+    //solve_maze(data, output, x, y, n, 0);
+    solve_maze_deadend_elim(data, output, x, y, n, 0);
     clock_gettime(CLOCK_REALTIME, &finish);
     elapsed = (finish.tv_sec - start.tv_sec);
     elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
@@ -462,7 +430,7 @@ int maze_demo(char *path) {
 //    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
 //    printf("maze threaded:\t%f\n", elapsed);
 
-    if (stbi_write_png("solution_maze.png", x, y, n, output, 0) == 0){
+    if (save && stbi_write_png("solution_maze.png", x, y, n, output, 0) == 0){
         perror("Error saving file");
         return -1;
     }
@@ -478,6 +446,6 @@ int main(int argc, char *argv[]) {
     }
     printf("Max threads: %i\n", omp_get_max_threads());
 
-    //return image(argv[1]);
-    return maze_demo(argv[1]);
+    //return image(argv[1], 0);
+    return maze_demo(argv[1], 1);
 }
