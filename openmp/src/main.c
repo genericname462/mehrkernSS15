@@ -1,7 +1,10 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
+#include <inttypes.h>
 #include <omp.h>
 #include <string.h>
+#define _POSIX_C_SOURCE 199309L
 #include <time.h>
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -10,6 +13,7 @@
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../lib/stb_image_write.h"
+
 
 #define CLAMP(x, low, high) ({\
   __typeof__(x) __x = (x); \
@@ -21,7 +25,7 @@
 #define push(sp, n) (*((sp)++) = (n))
 #define pop(sp) (*--(sp))
 
-u_int32_t color_map[] = {0xffff0000,0xffff00ff,0xff00ff00,0x00ffff};
+uint32_t color_map[] = {0xffff0000,0xffff00ff,0xff00ff00,0x00ffff};
 
 int print_matrix(double *matrix, size_t n, size_t m) {
     for (int i = 0; i < n; ++i) {
@@ -207,15 +211,127 @@ int image(char *path) {
 }
 
 int solve_maze(unsigned char *data, unsigned char *output, int x, int y, int n, int p) {
-    u_int32_t wall = 0xff000000;    //black
-    u_int32_t path = 0xffffffff;    //white
+    uint32_t wall = 0xff000000;    //black
+    uint32_t path = 0xffffffff;    //white
 
     //Pixel format on little endian: [ALPHA | BLUE | GREEN | RED ]
-    u_int32_t *bigdata;
-    bigdata = (u_int32_t*) data;
+    uint32_t *bigdata;
+    bigdata = (uint32_t*) data;
 
-    u_int32_t *bigout;
-    bigout = (u_int32_t*) output;
+    uint32_t *bigout;
+    bigout = (uint32_t*) output;
+
+    memcpy(output, data, (size_t) x * y * n);
+
+    //Find entry and exit
+    //TODO: unlimit image size. MAX_INT at the moment
+    int entry = -1;
+    int exit = -1;
+    for (int j = 0; j < y; ++j) {
+        for (int i = 0; i < x; ++i) {
+            if (i == 0 || j == 0 || i == x-1 || j == y-1) {
+                if (bigout[j * x + i] == path) {
+                    if (entry == -1) {
+                        entry = j * x + i;
+                        bigout[j * x + i] = 0xff0000ff; //red
+                    } else {
+                        exit = j * x + i;
+                        bigout[j * x + i] = 0xffffff00; //cyan
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    printf("entry: %i\texit: %i\n", entry, exit);
+
+    //Algorithm
+    int max_size = x * y;
+    int stack[100000]; //Fix later, also mark access as critical
+    int *sbp = stack;
+    int *sp = stack;
+    int v;
+
+    push(sp, entry);
+    omp_set_num_threads(1);
+    //#pragma omp parallel if(p) default(shared) private(v)
+    {
+        while (sp >= sbp) {
+            //test if not visited already
+            //#pragma omp critical (access_stack)
+            {
+                v = pop(sp);
+            }
+            //printf("current pos: %i\n", v);
+            if (bigout[v] == path || bigout[v] == 0xff0000ff) {
+                //printf("%i not visited!\n", v);
+                //bigout[v] = visited;
+                //#pragma omp critical (access_image)
+                {
+                    bigout[v] = color_map[omp_get_thread_num()];
+                }
+                //push all adjacent paths to the stack
+                if (v + 1 >= 0 && v + 1 < max_size && bigout[v + 1] != wall) { //EAST
+                    if (bigout[v + 1] == 0xffffff00) {
+                        printf("Found exit: %i\n", v + 1);
+                        break;
+                    }
+                    //printf("East free!\n");
+                    //#pragma omp critical (access_stack)
+                    {
+                        push(sp, v + 1);
+                    }
+                }
+                if (v + x >= 0 && v + x <= max_size && bigout[v + x] != wall) { //SOUTH
+                    if (bigout[v + x] == 0xffffff00) {
+                        printf("Found exit: %i\n", v + x);
+                        break;
+                    }
+                    //printf("South free!\n");
+                    //#pragma omp critical (access_stack)
+                    {
+                        push(sp, v + x);
+                    }
+                }
+                if (v - 1 >= 0 && v - 1 < max_size && bigout[v - 1] != wall) { //WEST
+                    if (bigout[v - 1] == 0xffffff00) {
+                        printf("Found exit: %i\n", v - 1);
+                        break;
+                    }
+                    //printf("West free!\n");
+                    //#pragma omp critical (access_stack)
+                    {
+                        push(sp, v - 1);
+                    }
+                }
+                if (v - x >= 0 && v - x < max_size && bigout[v - x] != wall) { //NORTH
+                    if (bigout[v - x] == 0xffffff00) {
+                        printf("Found exit: %i\n", v - x);
+                        break;
+                    }
+                    //printf("North free!\n");
+                    //#pragma omp critical (access_stack)
+                    {
+                        push(sp, v - x);
+                    }
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
+int solve_maze2(unsigned char *data, unsigned char *output, int x, int y, int n, int p) {
+    uint32_t wall = 0xff000000;    //black
+    uint32_t path = 0xffffffff;    //white
+
+    //Pixel format on little endian: [ALPHA | BLUE | GREEN | RED ]
+    uint32_t *bigdata;
+    bigdata = (uint32_t*) data;
+
+    uint32_t *bigout;
+    bigout = (uint32_t*) output;
 
     memcpy(output, data, (size_t) x * y * n);
 
