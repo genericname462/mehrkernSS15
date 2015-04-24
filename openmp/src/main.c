@@ -320,7 +320,7 @@ int solve_maze(unsigned char *data, unsigned char *output, int x, int y, int n, 
 
 int maze_demo(char *path) {
     int x,y,n;
-    unsigned char *data = stbi_load(path, &x, &y, &n, 0);
+    unsigned char *data = stbi_load(path, &x, &y, &n, 4);
     if (data == NULL) {
         printf("%s\n", stbi_failure_reason());
         return -1;
