@@ -3,6 +3,7 @@
 #include <omp.h>
 #include <string.h>
 #include <time.h>
+#include <sys/queue.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_FAILURE_USERMSG
@@ -17,6 +18,9 @@
   __typeof__(high) __high = (high);\
   __x > __high ? __high : (__x < __low ? __low : __x);\
   })
+
+#define push(sp, n) (*((sp)++) = (n))
+#define pop(sp) (*--(sp))
 
 int print_matrix(double *matrix, size_t n, size_t m) {
     for (int i = 0; i < n; ++i) {
@@ -203,8 +207,9 @@ int image(char *path) {
 
 int solve_maze(unsigned char *data, unsigned char *output, int x, int y, int n, int p) {
     //assume only red component, therefore c will be 0
-    unsigned char wall = 0; //black
-    unsigned char path = 255; //white
+    u_int32_t wall = 0xff000000;    //black
+    u_int32_t path = 0xffffffff;    //white
+    u_int32_t visited = 0xff00ff00; //green
 
     //Pixel format on little endian: [ALPHA | BLUE | GREEN | RED ]
     u_int32_t *bigdata;
@@ -213,21 +218,22 @@ int solve_maze(unsigned char *data, unsigned char *output, int x, int y, int n, 
     u_int32_t *bigout;
     bigout = (u_int32_t*) output;
 
-    //memcpy(output, data, (size_t) x * y * n);
+    memcpy(output, data, (size_t) x * y * n);
 
-    //find start and end
+    //Find entry and exit
+    //TODO: unlimit image size. MAX_INT at the moment
     int entry = -1;
     int exit = -1;
     for (int j = 0; j < y; ++j) {
         for (int i = 0; i < x; ++i) {
             if (i == 0 || j == 0 || i == x-1 || j == y-1) {
-                if (bigdata[j * x + i] == 0xffffffff) {
+                if (bigout[j * x + i] == 0xffffffff) {
                     if (entry == -1) {
                         entry = j * x + i;
-                        bigout[j * x + i] = 0xff0000ff;
+                        bigout[j * x + i] = 0xff0000ff; //red
                     } else {
                         exit = j * x + i;
-                        bigout[j * x + i] = 0xff00ff00;
+                        bigout[j * x + i] = 0xffffff00; //cyan
                     }
                 }
             }
@@ -236,7 +242,54 @@ int solve_maze(unsigned char *data, unsigned char *output, int x, int y, int n, 
     printf("entry: %i\texit: %i\n", entry, exit);
 
     //Algorithm
-    
+    int max_size = x * y;
+    int stack[5000]; //Fix later, also mark access as critical
+    int *sbp = stack;
+    int *sp = stack;
+
+    push(sp, entry);
+    while (sp >= sbp) {
+        //test if not visited already
+        int v = pop(sp);
+        //printf("current pos: %i\n", v);
+        if (bigout[v] != visited) {
+            //printf("%i not visited!\n", v);
+            bigout[v] = visited;
+            //push all adjacent paths to the stack
+            if (v+1 >= 0 && v+1 < max_size && bigout[v + 1] != wall) { //EAST
+                if (bigout[v+1] == 0xffffff00) {
+                    printf("Found exit: %i\n", v+1);
+                    break;
+                }
+                    //printf("East free!\n");
+                    push(sp, v+1);
+            }
+            if (v+x >= 0 && v+x <= max_size && bigout[v + x] != wall) { //SOUTH
+                if (bigout[v+x] == 0xffffff00) {
+                    printf("Found exit: %i\n", v+x);
+                    break;
+                }
+                    //printf("South free!\n");
+                    push(sp, v+x);
+            }
+            if (v-1 >= 0 && v-1 < max_size && bigout[v - 1] != wall) { //WEST
+                if (bigout[v-1] == 0xffffff00) {
+                    printf("Found exit: %i\n", v-1);
+                    break;
+                }
+                    //printf("West free!\n");
+                    push(sp, v-1);
+            }
+            if (v-x >= 0 && v-x < max_size && bigout[v - x] != wall) { //NORTH
+                if (bigout[v-x] == 0xffffff00) {
+                    printf("Found exit: %i\n", v-x);
+                    break;
+                }
+                    //printf("North free!\n");
+                    push(sp, v-x);
+            }
+        }
+    }
 
     return 0;
 }
@@ -248,7 +301,7 @@ int maze_demo(char *path) {
         printf("%s\n", stbi_failure_reason());
         return -1;
     }
-    printf("x:%i,y:%i,composite layers:%i\n", x,y,n);
+    printf("Imagedata: x:%i, y:%i, composite layers:%i\n", x,y,n);
 
     unsigned char *output = calloc((size_t) x * y * n, 1);
 
@@ -284,6 +337,7 @@ int main(int argc, char *argv[]) {
         return -1;
     }
     printf("Max threads: %i\n", omp_get_max_threads());
+
     //return image(argv[1]);
     return maze_demo(argv[1]);
 }
