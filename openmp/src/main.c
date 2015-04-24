@@ -3,7 +3,6 @@
 #include <omp.h>
 #include <string.h>
 #include <time.h>
-#include <sys/queue.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_FAILURE_USERMSG
@@ -21,6 +20,8 @@
 
 #define push(sp, n) (*((sp)++) = (n))
 #define pop(sp) (*--(sp))
+
+u_int32_t color_map[] = {0xffff0000,0xffff00ff,0xff00ff00,0x00ffff};
 
 int print_matrix(double *matrix, size_t n, size_t m) {
     for (int i = 0; i < n; ++i) {
@@ -206,10 +207,8 @@ int image(char *path) {
 }
 
 int solve_maze(unsigned char *data, unsigned char *output, int x, int y, int n, int p) {
-    //assume only red component, therefore c will be 0
     u_int32_t wall = 0xff000000;    //black
     u_int32_t path = 0xffffffff;    //white
-    u_int32_t visited = 0xff00ff00; //green
 
     //Pixel format on little endian: [ALPHA | BLUE | GREEN | RED ]
     u_int32_t *bigdata;
@@ -227,13 +226,14 @@ int solve_maze(unsigned char *data, unsigned char *output, int x, int y, int n, 
     for (int j = 0; j < y; ++j) {
         for (int i = 0; i < x; ++i) {
             if (i == 0 || j == 0 || i == x-1 || j == y-1) {
-                if (bigout[j * x + i] == 0xffffffff) {
+                if (bigout[j * x + i] == path) {
                     if (entry == -1) {
                         entry = j * x + i;
                         bigout[j * x + i] = 0xff0000ff; //red
                     } else {
                         exit = j * x + i;
                         bigout[j * x + i] = 0xffffff00; //cyan
+                        break;
                     }
                 }
             }
@@ -243,50 +243,74 @@ int solve_maze(unsigned char *data, unsigned char *output, int x, int y, int n, 
 
     //Algorithm
     int max_size = x * y;
-    int stack[5000]; //Fix later, also mark access as critical
+    int stack[100000]; //Fix later, also mark access as critical
     int *sbp = stack;
     int *sp = stack;
+    int v;
 
     push(sp, entry);
-    while (sp >= sbp) {
-        //test if not visited already
-        int v = pop(sp);
-        //printf("current pos: %i\n", v);
-        if (bigout[v] != visited) {
-            //printf("%i not visited!\n", v);
-            bigout[v] = visited;
-            //push all adjacent paths to the stack
-            if (v+1 >= 0 && v+1 < max_size && bigout[v + 1] != wall) { //EAST
-                if (bigout[v+1] == 0xffffff00) {
-                    printf("Found exit: %i\n", v+1);
-                    break;
+    omp_set_num_threads(1);
+    //#pragma omp parallel if(p) default(shared) private(v)
+    {
+        while (sp >= sbp) {
+            //test if not visited already
+            //#pragma omp critical (access_stack)
+            {
+                v = pop(sp);
+            }
+            //printf("current pos: %i\n", v);
+            if (bigout[v] == path || bigout[v] == 0xff0000ff) {
+                //printf("%i not visited!\n", v);
+                //bigout[v] = visited;
+                //#pragma omp critical (access_image)
+                {
+                    bigout[v] = color_map[omp_get_thread_num()];
                 }
+                //push all adjacent paths to the stack
+                if (v + 1 >= 0 && v + 1 < max_size && bigout[v + 1] != wall) { //EAST
+                    if (bigout[v + 1] == 0xffffff00) {
+                        printf("Found exit: %i\n", v + 1);
+                        break;
+                    }
                     //printf("East free!\n");
-                    push(sp, v+1);
-            }
-            if (v+x >= 0 && v+x <= max_size && bigout[v + x] != wall) { //SOUTH
-                if (bigout[v+x] == 0xffffff00) {
-                    printf("Found exit: %i\n", v+x);
-                    break;
+                    //#pragma omp critical (access_stack)
+                    {
+                        push(sp, v + 1);
+                    }
                 }
+                if (v + x >= 0 && v + x <= max_size && bigout[v + x] != wall) { //SOUTH
+                    if (bigout[v + x] == 0xffffff00) {
+                        printf("Found exit: %i\n", v + x);
+                        break;
+                    }
                     //printf("South free!\n");
-                    push(sp, v+x);
-            }
-            if (v-1 >= 0 && v-1 < max_size && bigout[v - 1] != wall) { //WEST
-                if (bigout[v-1] == 0xffffff00) {
-                    printf("Found exit: %i\n", v-1);
-                    break;
+                    //#pragma omp critical (access_stack)
+                    {
+                        push(sp, v + x);
+                    }
                 }
+                if (v - 1 >= 0 && v - 1 < max_size && bigout[v - 1] != wall) { //WEST
+                    if (bigout[v - 1] == 0xffffff00) {
+                        printf("Found exit: %i\n", v - 1);
+                        break;
+                    }
                     //printf("West free!\n");
-                    push(sp, v-1);
-            }
-            if (v-x >= 0 && v-x < max_size && bigout[v - x] != wall) { //NORTH
-                if (bigout[v-x] == 0xffffff00) {
-                    printf("Found exit: %i\n", v-x);
-                    break;
+                    //#pragma omp critical (access_stack)
+                    {
+                        push(sp, v - 1);
+                    }
                 }
+                if (v - x >= 0 && v - x < max_size && bigout[v - x] != wall) { //NORTH
+                    if (bigout[v - x] == 0xffffff00) {
+                        printf("Found exit: %i\n", v - x);
+                        break;
+                    }
                     //printf("North free!\n");
-                    push(sp, v-x);
+                    //#pragma omp critical (access_stack)
+                    {
+                        push(sp, v - x);
+                    }
+                }
             }
         }
     }
