@@ -400,7 +400,7 @@ int solve_maze_dead_end_elimination(unsigned char *data, unsigned char *output, 
             min_y = 1;
             max_y = y - 1;
 
-            //Popualte the stack so other threads can't cut this one of by sourounding it
+            //Populate the stack so other threads can't cut this one of by surrounding it
             printf("Thread %i: x-range %i - %i\ty-range %i - %i\n", omp_get_thread_num(), min_x, max_x, min_y, max_y);
             position end;
             for (int j = min_y; j < max_y; ++j) {
