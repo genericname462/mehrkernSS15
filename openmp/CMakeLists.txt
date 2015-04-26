@@ -11,10 +11,10 @@ if (OPENMP_FOUND)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
 endif()
 
+set(HEADER_FILES lib/stb_image.h lib/stb_image_write.h src/async.h)
+set(SOURCE_FILES src/main.c src/async.c)
 
-set(SOURCE_FILES src/main.c)
-
-add_executable(openmp ${SOURCE_FILES})
+add_executable(openmp ${SOURCE_FILES} ${HEADER_FILES})
 target_link_libraries(openmp m rt)
 
 

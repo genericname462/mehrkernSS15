@@ -14,6 +14,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../lib/stb_image_write.h"
 
+#include "async.h"
 
 #define CLAMP(x, low, high) ({\
   __typeof__(x) __x = (x); \
@@ -107,9 +108,9 @@ int solve_jacobi_threaded(double *matrix, size_t n, size_t m, double *b, double 
     return 0;
 }
 
-int jac() {
-    size_t n, m;
-    n = 2;
+int jacobi_demo() {
+    size_t n;
+    n = 4;
     double *A, *b, *x;
     A = calloc(n * n, sizeof(double));
     b = malloc(n * sizeof(double));
@@ -122,8 +123,8 @@ int jac() {
     A[2] = 5;
     A[3] = 7;
 
-    double C[4][4] = {2,1,5,7};
-    double d[4] = {11, 13};
+    double C[2][2] = {{2,1},{5,7}};
+    double d[2] = {11, 13};
 
     b[0] = 11;
     b[1] = 13;
@@ -132,16 +133,16 @@ int jac() {
     x[1] = 1;
 
     printf("Matrix A:\n");
-    print_matrix(&C, n, n);
+    print_matrix((double*)&C, n, n);
     printf("Vector b:\n");
     print_vector(d, n);
     begin = clock();
-    solve_jacobi_iterative(&C, n, n, d, x);
+    solve_jacobi_iterative((double*)&C, n, n, d, x);
     end_i = clock() - begin;
     x[0] = 1;
     x[0] = 1;
     begin = clock();
-    solve_jacobi_threaded(&C, n, n, d, x);
+    solve_jacobi_threaded((double*)&C, n, n, d, x);
     end_t = clock() - begin;
     printf("Solution:\n");
     print_vector(x, n);
@@ -151,7 +152,7 @@ int jac() {
     printf("delta threaded: %d\n", (int) end_t);
     printf("seconds threaded: %f\n", ((end_t * 1.) / CLOCKS_PER_SEC));
     printf("relative speedup: %f\n", (double) end_i / end_t);
-    printf("CLOCKS_PER_SEC = %lu\n", CLOCKS_PER_SEC);
+    printf("CLOCKS_PER_SEC = %i\n", CLOCKS_PER_SEC);
 
     free(A); free(b); free(x);
     return 0;
@@ -521,12 +522,16 @@ int maze_demo(char *path, int save) {
 
 int main(int argc, char *argv[]) {
     if(argc < 2) {
-        printf("Specify path to image!");
+        printf("Specify path to image or demo name!\n");
         return -1;
+    }
+    if (!strncmp(argv[1], "async_demo", 20)){
+        return async_demo(1);
     }
     printf("Max threads: %i\n", omp_get_max_threads());
     printf("Max processors: %i\n", omp_get_num_procs());
 
     //return image(argv[1], 0);
     return maze_demo(argv[1], 1);
+
 }
