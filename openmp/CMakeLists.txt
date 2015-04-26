@@ -3,7 +3,7 @@ project(openmp)
 
 SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/build)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -Wall -O2")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -Wall")
 
 find_package(OpenMP)
 if (OPENMP_FOUND)

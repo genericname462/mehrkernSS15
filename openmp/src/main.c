@@ -25,7 +25,13 @@
 #define push(sp, n) (*((sp)++) = (n))
 #define pop(sp) (*--(sp))
 
-uint32_t color_map[] = {0xffff0000,0xffff00ff,0xff00ff00,0xff00ffff};
+uint32_t color_map[] = {0xffff0000,0xffff00ff,0xff00ff00,0xff00ffff,0xffb0acff,0xffff007B, 0xffffff00, 0xff4b88ff};
+
+struct position {
+    int x;
+    int y;
+};
+typedef struct position position;
 
 int print_matrix(double *matrix, size_t n, size_t m) {
     for (int i = 0; i < n; ++i) {
@@ -210,115 +216,99 @@ int image(char *path, int save) {
     return 0;
 }
 
-int solve_maze(unsigned char *data, unsigned char *output, int x, int y, int n, int parallel) {
+int solve_maze_partition(unsigned char *data, unsigned char *output, int x, int y, int n, int parallel) {
     uint32_t wall = 0xff000000;    //black
     uint32_t path = 0xffffffff;    //white
 
-    //Pixel format on little endian: [ALPHA | BLUE | GREEN | RED ]
-    uint32_t *bigdata;
-    bigdata = (uint32_t*) data;
-
-    uint32_t *bigout;
-    bigout = (uint32_t*) output;
-
     memcpy(output, data, (size_t) x * y * n);
+
+    //Pixel format on little endian: [ALPHA | BLUE | GREEN | RED ]
+    uint32_t (*out_m)[y][x];
+    out_m = (void*) output;
 
     //Find entry and exit
     //TODO: unlimit image size. MAX_INT at the moment
-    int entry = -1;
-    int exit = -1;
+    position ent = {.x = -1, .y = -1};
+    position ex = {.x = -1, .y = -1};
+
     for (int j = 0; j < y; ++j) {
         for (int i = 0; i < x; ++i) {
             if (i == 0 || j == 0 || i == x-1 || j == y-1) {
-                if (bigout[j * x + i] == path) {
-                    if (entry == -1) {
-                        entry = j * x + i;
-                        bigout[j * x + i] = 0xff0000ff; //red
+                if ((*out_m)[j][i] == path) {
+                    if (ent.x == -1) {
+                        ent.x = i;
+                        ent.y = j;
                     } else {
-                        exit = j * x + i;
-                        bigout[j * x + i] = 0xffffff00; //cyan
+                        ex.x = i;
+                        ex.y = j;
                         break;
                     }
                 }
             }
         }
     }
-    printf("entry: %i\texit: %i\n", entry, exit);
+    printf("entry position: (%i,%i)\texit position: (%i,%i)\n", ent.x, ent.y, ex.x, ex.y);
+    printf("entry color: %x\texit color: %x\n", (*out_m)[ent.y][ent.x], (*out_m)[ex.y][ex.x]);
+    printf("Using partition!\n");
+    int done = 0;
 
-    //Algorithm
-    int max_size = x * y;
-    int stack[100000]; //Fix later, also mark access as critical
-    int *sbp = stack;
-    int *sp = stack;
-    int v;
+    //testing purpose, simulate the other thread
+    //(*out_m)[ex.y][ex.x] = 0xffff00ff;
+    //(*out_m)[ent.y][ent.x] = 0xff00ffff;
 
-    push(sp, entry);
-    omp_set_num_threads(1);
-    //#pragma omp parallel if(parallel) default(shared) private(v)
+    //More than 2 threads makes detection of success costly and is not implemented
+    #pragma omp parallel num_threads(2) shared(out_m, done)
     {
-        while (sp >= sbp) {
-            //test if not visited already
-            //#pragma omp critical (access_stack)
-            {
-                v = pop(sp);
-            }
-            //printf("current pos: %i\n", v);
-            if (bigout[v] == path || bigout[v] == 0xff0000ff) {
-                //printf("%i not visited!\n", v);
-                //bigout[v] = visited;
-                //#pragma omp critical (access_image)
-                {
-                    bigout[v] = color_map[omp_get_thread_num()];
+        //Init stuff
+        uint32_t self_color = color_map[omp_get_thread_num()];
+        position current_position;
+        position stack[100000]; //Fix later
+        position *sbp = stack;
+        position *sp = stack;
+
+        //Set start position
+        if (omp_get_thread_num() == 0) {
+            push(sp, ent);
+        } else if (omp_get_thread_num() == 1) {
+            push(sp, ex);
+        }
+        while (sp > sbp && !done) {
+            //Get new cell, test if visited. Terminate if marked by another thread, mark self if not
+            current_position = pop(sp);
+            if ((*out_m)[current_position.y][current_position.x] != path && (*out_m)[current_position.y][current_position.x] != self_color) {
+                printf("Thread %i: found other thread at: (%i,%i), color: %x\n", omp_get_thread_num(), current_position.x, current_position.y, (*out_m)[current_position.y][current_position.x]);
+            #pragma omp atomic write
+                done = 1;
+            } else {
+                (*out_m)[current_position.y][current_position.x] = self_color;
+
+                //Find new cells
+                position north = {current_position.x, current_position.y - 1};
+                position east = {current_position.x + 1, current_position.y};
+                position south = {current_position.x, current_position.y + 1};
+                position west = {current_position.x - 1, current_position.y};
+                if (north.y >= 0 && north.y < y &&
+                    (*out_m)[north.y][north.x] != wall && (*out_m)[north.y][north.x] != self_color) {
+                    push(sp, north);
                 }
-                //push all adjacent paths to the stack
-                if (v + 1 >= 0 && v + 1 < max_size && bigout[v + 1] != wall) { //EAST
-                    if (bigout[v + 1] == 0xffffff00) {
-                        printf("Found exit: %i\n", v + 1);
-                        break;
-                    }
-                    //printf("East free!\n");
-                    //#pragma omp critical (access_stack)
-                    {
-                        push(sp, v + 1);
-                    }
+                if (east.x >= 0 && east.x < x &&
+                    (*out_m)[east.y][east.x] != wall && (*out_m)[east.y][east.x] != self_color) {
+                    push(sp, east);
                 }
-                if (v + x >= 0 && v + x <= max_size && bigout[v + x] != wall) { //SOUTH
-                    if (bigout[v + x] == 0xffffff00) {
-                        printf("Found exit: %i\n", v + x);
-                        break;
-                    }
-                    //printf("South free!\n");
-                    //#pragma omp critical (access_stack)
-                    {
-                        push(sp, v + x);
-                    }
+                if (south.y >= 0 && south.y < y &&
+                    (*out_m)[south.y][south.x] != wall && (*out_m)[south.y][south.x] != self_color) {
+                    push(sp, south);
                 }
-                if (v - 1 >= 0 && v - 1 < max_size && bigout[v - 1] != wall) { //WEST
-                    if (bigout[v - 1] == 0xffffff00) {
-                        printf("Found exit: %i\n", v - 1);
-                        break;
-                    }
-                    //printf("West free!\n");
-                    //#pragma omp critical (access_stack)
-                    {
-                        push(sp, v - 1);
-                    }
-                }
-                if (v - x >= 0 && v - x < max_size && bigout[v - x] != wall) { //NORTH
-                    if (bigout[v - x] == 0xffffff00) {
-                        printf("Found exit: %i\n", v - x);
-                        break;
-                    }
-                    //printf("North free!\n");
-                    //#pragma omp critical (access_stack)
-                    {
-                        push(sp, v - x);
-                    }
+                if (west.x >= 0 && west.x < x &&
+                    (*out_m)[west.y][west.x] != wall && (*out_m)[west.y][west.x] != self_color) {
+                    push(sp, west);
                 }
             }
         }
-    }
+        //TODO: Print final path
 
+        printf("Thread %i: done, stack size: %lu\n", omp_get_thread_num(), sp - sbp);
+    }
     return 0;
 }
 
@@ -326,45 +316,27 @@ int solve_maze_dead_end_elimination(unsigned char *data, unsigned char *output, 
     uint32_t wall = 0xff000000;    //black
     uint32_t path = 0xffffffff;    //white
 
-    //Pixel format on little endian: [ALPHA | BLUE | GREEN | RED ]
-
-    uint32_t *bigout;
-    bigout = (uint32_t*) output;
-
     memcpy(output, data, (size_t) x * y * n);
 
+    //Pixel format on little endian: [ALPHA | BLUE | GREEN | RED ]
     uint32_t (*out_m)[y][x];
     out_m = (void*) output;
 
-    struct position {
-        int x;
-        int y;
-    };
-    typedef struct position position;
-
     //Find entry and exit
     //TODO: unlimit image size. MAX_INT at the moment
-    int entry = -1;
-    int exit = -1;
     position ent = {.x = -1, .y = -1};
     position ex = {.x = -1, .y = -1};
 
     for (int j = 0; j < y; ++j) {
         for (int i = 0; i < x; ++i) {
             if (i == 0 || j == 0 || i == x-1 || j == y-1) {
-                if (bigout[j * x + i] == path) {
-                    if (entry == -1) {
-                        entry = j * x + i;
+                if ((*out_m)[j][i] == path) {
+                    if (ent.x == -1) {
                         ent.x = i;
                         ent.y = j;
-                        //(*out_m)[ent.y][ent.x] = 0xff0000ff;
-                        //bigout[j * x + i] = 0xff0000ff; //red
                     } else {
-                        exit = j * x + i;
                         ex.x = i;
                         ex.y = j;
-                        //(*out_m)[ex.y][ex.x] = 0xffffff00;
-                        //bigout[j * x + i] = 0xffffff00; //cyan
                         break;
                     }
                 }
@@ -374,18 +346,17 @@ int solve_maze_dead_end_elimination(unsigned char *data, unsigned char *output, 
     printf("entry position: (%i,%i)\texit position: (%i,%i)\n", ent.x, ent.y, ex.x, ex.y);
     printf("entry color: %x\texit color: %x\n", (*out_m)[ent.y][ent.x], (*out_m)[ex.y][ex.x]);
 
-    //Algorithm
     if (!parallel) {
-        printf("Using seq version!\n");
+        //Algorithm
+        printf("Using sequential dead end elimination!\n");
         // ## SEQUENTIAL VERSION ##
-        int max_size = x * y;
         int done = 1;
         int count = 0;
         while (done) {
             done = 0;
-            ++count;
             for (int j = 1; j < y - 1; ++j) {
                 for (int i = 1; i < x - 1; ++i) {
+                    ++count;
                     if ((*out_m)[j][i] == path) {
                         int ends = 0;
                         if ((*out_m)[j][i + 1] == wall) {
@@ -409,74 +380,103 @@ int solve_maze_dead_end_elimination(unsigned char *data, unsigned char *output, 
                 }
             }
         }
+        printf("count: %i\n", count);
     } else {
-        printf("Using threaded version!\n");
-        // ## THREADED VERSION ##
-        int done = 0;
+        printf("Using parallel dead end elimination!\n");
 
-        //testing purpose, simulate other thread
-        //(*out_m)[ex.y][ex.x] = 0xffff00ff;
-        //(*out_m)[ent.y][ent.x] = 0xff00ffff;
-        //(*out_m)[56][51] = 0xffff00ff;
-
-        #pragma omp parallel num_threads(2) shared(done, out_m)
+        #pragma omp parallel
         {
             //Init stuff
-            int cx, cy;
-            uint32_t self_color = color_map[omp_get_thread_num()];
-            position current_position;
-            position stack[100000]; //Fix later
+            position *stack = malloc(1000000 * sizeof(position));
             position *sbp = stack;
             position *sp = stack;
+            uint32_t self_color = color_map[omp_get_thread_num()];
 
-            //Set start position
-            if (omp_get_thread_num() == 0) {
-                push(sp, ent);
-            } else if (omp_get_thread_num() == 1) {
-                push(sp, ex);
-            }
-            while (!done && sp > sbp) {
-                //Get new cell, test if visited. Terminate if marked by another thread, mark self if not
-                current_position = pop(sp);
+            //Set work range per thread
+            int num_th = omp_get_num_threads();
+            int min_x, max_x, min_y, max_y;
+            min_x = CLAMP((x / num_th) * omp_get_thread_num(), 1, x - 1);
+            max_x = CLAMP(min_x + x / num_th, 1, x - 1);
+            min_y = 1;
+            max_y = y - 1;
 
-                if ((*out_m)[current_position.y][current_position.x] != path && (*out_m)[current_position.y][current_position.x] != self_color) {
-                    printf("Other thread at: (%i,%i), color: %x\n", current_position.x, current_position.y, (*out_m)[current_position.y][current_position.x]);
-                    #pragma omp atomic write
-                        done = 1;
-                    printf("done, %i, stack size: %lu\n", omp_get_thread_num(), sp - sbp);
-                } else {
-                    (*out_m)[current_position.y][current_position.x] = self_color;
-                    //Find new cells
-                    position north = {current_position.x, current_position.y - 1};
-                    position east = {current_position.x + 1, current_position.y};
-                    position south = {current_position.x, current_position.y + 1};
-                    position west = {current_position.x - 1, current_position.y};
-
-                    if (north.x >= 0 && north.y >= 0 && north.x < x && north.y < y &&
-                            (*out_m)[north.y][north.x] != wall && (*out_m)[north.y][north.x] != self_color) {
-                        //printf("north: %x\n", (*out_m)[north.y][north.x]);
-                        push(sp, north);
-                    }
-                    if (east.x >= 0 && east.y >= 0 && east.x < x && east.y < y &&
-                            (*out_m)[east.y][east.x] != wall && (*out_m)[east.y][east.x] != self_color) {
-                        //printf("east: %x\n", (*out_m)[east.y][east.x]);
-                        push(sp, east);
-                    }
-                    if (south.x >= 0 && south.y >= 0 && south.x < x && south.y < y &&
-                            (*out_m)[south.y][south.x] != wall && (*out_m)[south.y][south.x] != self_color) {
-                        //printf("south: %x\n", (*out_m)[south.y][south.x]);
-                        push(sp, south);
-                    }
-                    if (west.x >= 0 && west.y >= 0 && west.x < x && west.y < y &&
-                            (*out_m)[west.y][west.x] != wall && (*out_m)[west.y][west.x] != self_color) {
-                        //printf("west: %x\n", (*out_m)[west.y][west.x]);
-                        push(sp, west);
+            //Popualte the stack so other threads can't cut this one of by sourounding it
+            printf("Thread %i: x-range %i - %i\ty-range %i - %i\n", omp_get_thread_num(), min_x, max_x, min_y, max_y);
+            position end;
+            for (int j = min_y; j < max_y; ++j) {
+                for (int i = min_x; i < max_x; ++i) {
+                    if ((*out_m)[j][i] == path) {
+                        int ends = 0;
+                        if ((*out_m)[j][i + 1] != path) {
+                            ++ends;
+                        }
+                        if ((*out_m)[j + 1][i] != path) {
+                            ++ends;
+                        }
+                        if ((*out_m)[j][i - 1] != path) {
+                            ++ends;
+                        }
+                        if ((*out_m)[j - 1][i] != path) {
+                            ++ends;
+                        }
+                        if (ends >= 3) {
+                            //printf("Dead end found!\n");
+                            (*out_m)[j][i] = self_color;
+                            end.x = i; end.y = j;
+                            push(sp, end);
+                        }
                     }
                 }
             }
-        }
-        //Print final path
 
+            int count = 0;
+            position current_position;
+            int north_c, east_c, south_c, west_c;
+            while (sp > sbp) {
+                ++count;
+                //printf("%lu dead ends on stack\n", sp - sbp);
+                //stbi_write_png("solution_maze_temp.png", x, y, n, output, 0);
+                current_position = pop(sp);
+                //printf("current: (%i,%i)\n", current_position.x, current_position.y);
+                //(*out_m)[current.y][current.x] = 0xff00ff00;
+                north_c=0;east_c=0;south_c=0;west_c=0;
+
+                //Find new cells
+                position north = {current_position.x, current_position.y - 1};
+                position east = {current_position.x + 1, current_position.y};
+                position south = {current_position.x, current_position.y + 1};
+                position west = {current_position.x - 1, current_position.y};
+                if (north.y >= 0 && north.y < y &&
+                    (*out_m)[north.y][north.x] != path) {
+                    north_c = 1;
+                }
+                if (east.x >= 0 && east.x < x &&
+                    (*out_m)[east.y][east.x] != path) {
+                    east_c = 1;
+                }
+                if (south.y >= 0 && south.y < y &&
+                    (*out_m)[south.y][south.x] != path) {
+                    south_c = 1;
+                }
+                if (west.x >= 0 && west.x < x &&
+                    (*out_m)[west.y][west.x] != path) {
+                    west_c = 1;
+                }
+
+                if (west_c + east_c + south_c + north_c >= 3) {
+                    (*out_m)[current_position.y][current_position.x] = self_color;
+                    if (!east_c)
+                        push(sp, east);
+                    if (!south_c)
+                        push(sp, south);
+                    if (!west_c)
+                        push(sp, west);
+                    if (!north_c)
+                        push(sp, north);
+                }
+            }
+            free(stack);
+        }
     }
     return 0;
 }
@@ -496,15 +496,15 @@ int maze_demo(char *path, int save) {
     double elapsed;
 
     clock_gettime(CLOCK_REALTIME, &start);
-    //solve_maze(data, output, x, y, n, 0);
+    //solve_maze_partition(data, output, x, y, n, 0);
     solve_maze_dead_end_elimination(data, output, x, y, n, 1);
     clock_gettime(CLOCK_REALTIME, &finish);
     elapsed = (finish.tv_sec - start.tv_sec);
     elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
-    printf("maze iterative:\t%f\n", elapsed);
+    printf("Maze solved in %f seconds\n", elapsed);
 
 //    clock_gettime(CLOCK_REALTIME, &start);
-//    solve_maze(data, output, x, y, n, 1);
+//    solve_maze_partition(data, output, x, y, n, 1);
 //    clock_gettime(CLOCK_REALTIME, &finish);
 //    elapsed = (finish.tv_sec - start.tv_sec);
 //    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
