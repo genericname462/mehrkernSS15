@@ -1,5 +1,6 @@
 ## Various parallel algorithms
 
+![alt tag](http://a.pomf.se/svlkou.png)
+Small maze solved by 8 threads.
+[Big version](http://a.pomf.se/qiigqv.png)
 
-![alt tag](http://a.pomf.se/qiigqv.png)
-4001 * 4001 maze solved by 8 threads in 0.25 seconds
