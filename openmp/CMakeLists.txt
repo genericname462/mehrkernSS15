@@ -4,7 +4,7 @@ project(openmp)
 SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/build)
 
 # TODO: Try finding one standard. gnu99(no errors on linux and with mingw) or c11(no errors with cygwin)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -Wall")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -Wall")
 
 find_package(OpenMP)
 if (OPENMP_FOUND)
