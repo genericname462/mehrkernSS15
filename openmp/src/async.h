@@ -19,10 +19,4 @@ int printer(int *run, char *shared_buffer, omp_lock_t lock);
 int async_demo(int num_threads);
 
 
-
-
-
-
-
-
 #endif //OPENMP_ASYNC_H

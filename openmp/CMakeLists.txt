@@ -11,12 +11,12 @@ if (OPENMP_FOUND)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
 endif()
 
-set(HEADER_FILES lib/stb_image.h lib/stb_image_write.h src/async.h)
-set(SOURCE_FILES src/main.c src/async.c)
+set(HEADER_FILES lib/stb_image.h lib/stb_image_write.h src/async.h src/imagefilter.h)
+set(SOURCE_FILES src/main.c src/async.c src/imagefilter.c)
 
-add_executable(openmp ${SOURCE_FILES} ${HEADER_FILES})
+add_executable(openmp ${SOURCE_FILES})
 target_link_libraries(openmp m rt)
 
 
-#For Mingw32:
-#gcc -fopenmp -std=gnu99 -O3 -o out.exe main.c async.c -static -lgomp
+#For non-CMake user:
+#gcc -fopenmp -std=gnu99 -O3 -o out.exe main.c async.c imagefilter.c -static -lgomp

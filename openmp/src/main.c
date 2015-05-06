@@ -14,14 +14,8 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../lib/stb_image_write.h"
 
-#include "async.h"
-
-#define CLAMP(x, low, high) ({\
-  __typeof__(x) __x = (x); \
-  __typeof__(low) __low = (low);\
-  __typeof__(high) __high = (high);\
-  __x > __high ? __high : (__x < __low ? __low : __x);\
-  })
+//#include "async.h"
+#include "imagefilter.h"
 
 #define push(sp, n) (*((sp)++) = (n))
 #define pop(sp) (*--(sp))
@@ -158,36 +152,14 @@ int jacobi_demo() {
     return 0;
 }
 
-int sharpen(unsigned char *data, unsigned char *output, int x, int y, int n, int parallel){
-    memcpy(output, data, (size_t) x * y * n);
-    int yj, xi, c;
-    signed int sum;
-    #pragma omp parallel if(parallel) shared(output) private(yj,xi,c,sum)
-    #pragma omp for
-    for (yj = 1; yj < y-1; ++yj) {
-        for (xi = 1; xi < x-1; ++xi) {
-            for (c = 0; c < n; ++c) {
-                // Apply kernel
-                sum = -1 * (signed int) data[(yj-1) * x * n + (xi-1) * n + c] + -1 * (signed int) data[(yj-1) * x * n + (xi) * n + c] + -1 * (signed int) data[(yj-1) * x * n + (xi+1) * n + c] +
-                      -1 * (signed int) data[(yj) * x * n + (xi-1) * n + c] + 9 * (signed int) data[(yj) * x * n + (xi) * n + c] + -1 * (signed int) data[(yj) * x * n + (xi+1) * n + c] +
-                      -1 * (signed int) data[(yj+1) * x * n + (xi-1) * n + c] + -1 * (signed int) data[(yj+1) * x * n + (xi) * n + c] + -1 * (signed int) data[(yj+1) * x * n + (xi+1) * n + c];
-
-                // Set stuff
-                output[(yj * x * n) + (xi * n) + c] = (unsigned char) CLAMP(sum, 0, 255);
-            }
-        }
-    }
-    return 0;
-}
-
-int image(char *path, int save) {
+int image_demo(char *path, int save) {
     int x,y,n;
-    unsigned char *data = stbi_load(path, &x, &y, &n, 0);
+    unsigned char *data = stbi_load(path, &x, &y, &n, 4);
     if (data == NULL) {
         printf("%s\n", stbi_failure_reason());
         return -1;
     }
-    printf("x:%i,y:%i,composite layers:%i\n", x,y,n);
+    printf("Imagedata: x:%i,y:%i,composite layers:%i\n", x,y,n);
 
     unsigned char *output = malloc((size_t) x * y * n);
 
@@ -208,10 +180,18 @@ int image(char *path, int save) {
     elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
     printf("sharpen threaded:\t%f\n", elapsed);
 
-    if (save && stbi_write_png("image_sharpen.png", x, y, n, output, 0) == 0){
+
+    apply_kernel_to_image(data, output, x, y, n, 1, (double*) &sharpen_kernel, 3);
+    if (save && stbi_write_png("image_sharpend.png", x, y, n, output, 0) == 0){
         perror("Error saving file");
         return -1;
     }
+    apply_kernel_to_image(data, output, x, y, n, 1, (double*) &gauss_kernel, 7);
+    if (save && stbi_write_png("image_gauss.png", x, y, n, output, 0) == 0){
+        perror("Error saving file");
+        return -1;
+    }
+
     stbi_image_free(data);
     free(output);
     return 0;
@@ -319,7 +299,7 @@ int solve_maze_dead_end_elimination(unsigned char *data, unsigned char *output, 
 
     memcpy(output, data, (size_t) x * y * n);
 
-    //Pixel format on little endian: [ALPHA | BLUE | GREEN | RED ]
+    //Pixel format on little endian: [ ALPHA | BLUE | GREEN | RED ]
     uint32_t (*out_m)[y][x];
     out_m = (void*) output;
 
@@ -526,12 +506,12 @@ int main(int argc, char *argv[]) {
         return -1;
     }
     if (!strncmp(argv[1], "async_demo", 20)){
-        return async_demo(1);
+        //return async_demo(1);
     }
     printf("Max threads: %i\n", omp_get_max_threads());
     printf("Max processors: %i\n", omp_get_num_procs());
 
-    //return image(argv[1], 0);
-    return maze_demo(argv[1], 1);
+    return image_demo(argv[1], 1);
+    //return maze_demo(argv[1], 0);
 
 }
