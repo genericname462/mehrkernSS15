@@ -27,8 +27,8 @@ int apply_kernel_to_image(unsigned char *input, unsigned char *output, int x, in
     int kernel_size_offset = (kernel_size-1)/2;
     #pragma omp parallel if(parallel) private(sum)
     #pragma omp for
-    for (int j = 1; j < y-1; ++j) {
-        for (int i = 1; i < x - 1; ++i) {
+    for (int j = kernel_size_offset; j < y-(kernel_size_offset); ++j) {
+        for (int i = kernel_size_offset; i < x-(kernel_size_offset); ++i) {
             for (int c = 0; c < n; ++c) {
                 // Compute kernel
                 sum = 0;
