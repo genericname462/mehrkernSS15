@@ -154,7 +154,7 @@ int jacobi_demo() {
 
 int image_demo(char *path, int save) {
     int x,y,n;
-    unsigned char *data = stbi_load(path, &x, &y, &n, 4);
+    unsigned char *data = stbi_load(path, &x, &y, &n, 3);
     if (data == NULL) {
         printf("%s\n", stbi_failure_reason());
         return -1;
@@ -181,19 +181,55 @@ int image_demo(char *path, int save) {
     printf("sharpen threaded:\t%f\n", elapsed);
 
 
-    apply_kernel_to_image(data, output, x, y, n, 1, (double*) &sharpen_kernel, 3);
-    if (save && stbi_write_png("image_sharpend.png", x, y, n, output, 0) == 0){
+    apply_kernel_to_image(data, output, x, y, n, 1, (double*) &soft_sharpen_kernel, 3);
+    if (save && stbi_write_png("image_soft_sharpend.png", x, y, n, output, 0) == 0){
         perror("Error saving file");
         return -1;
     }
-    apply_kernel_to_image(data, output, x, y, n, 1, (double*) &gauss_kernel, 7);
-    if (save && stbi_write_png("image_gauss.png", x, y, n, output, 0) == 0){
+//    apply_kernel_to_image(data, output, x, y, n, 1, (double*) &sharpen_kernel, 3);
+//    if (save && stbi_write_png("image_sharpend.png", x, y, n, output, 0) == 0){
+//        perror("Error saving file");
+//        return -1;
+//    }
+    double *mykernel = generate_kernel(5,0.8,0);
+    apply_kernel_to_image(data, output, x, y, n, 1, mykernel, 11);
+    if (save && stbi_write_png("image_custom.png", x, y, n, output, 0) == 0){
+        perror("Error saving file");
+        return -1;
+    }
+    free(mykernel);
+//    apply_kernel_to_image(data, output, x, y, n, 1, (double*) &gauss_kernel, 7);
+//    if (save && stbi_write_png("image_gauss.png", x, y, n, output, 0) == 0){
+//        perror("Error saving file");
+//        return -1;
+//    }
+
+    double s = 2;
+    unsigned char *output_upscale = malloc((size_t) (x*s * y*s * n));
+    clock_gettime(CLOCK_REALTIME, &start);
+    upscale_lanczos2(data, output_upscale, x, y, n, 1, s);
+    clock_gettime(CLOCK_REALTIME, &finish);
+    elapsed = (finish.tv_sec - start.tv_sec);
+    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    printf("lanczos threaded:\t%f\n", elapsed);
+    if (save && stbi_write_png("image_upscale_lanczos.png", x*s, y*s, n, output_upscale, 0) == 0){
+        perror("Error saving file");
+        return -1;
+    }
+    upscale_nearest_neightbour(data, output_upscale, x, y, n, 1, s);
+    if (save && stbi_write_png("image_upscale_nearest_neightbour.png", x*s, y*s, n, output_upscale, 0) == 0){
+        perror("Error saving file");
+        return -1;
+    }
+    upscale_bilinear(data, output_upscale, x, y, n, 1, s);
+    if (save && stbi_write_png("image_upscale_bilinear.png", x*s, y*s, n, output_upscale, 0) == 0){
         perror("Error saving file");
         return -1;
     }
 
     stbi_image_free(data);
     free(output);
+    free(output_upscale);
     return 0;
 }
 
