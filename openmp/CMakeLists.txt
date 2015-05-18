@@ -12,10 +12,10 @@ if (OPENMP_FOUND)
 endif()
 
 set(HEADER_FILES lib/stb_image.h lib/stb_image_write.h src/async.h src/imagefilter.h)
-set(SOURCE_FILES src/main.c src/async.c src/imagefilter.c)
+set(SOURCE_FILES src/main.c src/imagefilter.c)
 
 add_executable(openmp ${SOURCE_FILES})
-target_link_libraries(openmp m rt)
+target_link_libraries(openmp m)
 
 
 #For non-CMake user:
