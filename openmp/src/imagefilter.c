@@ -138,41 +138,43 @@ int upscale_bilinear(unsigned char *input, unsigned char *output, int x, int y, 
     double f_y_1_inter;
 
     signed int sum;
+    printf("max: %i,%i\n", x_out, y_out);
 
-    #pragma omp parallel if(parallel) shared(x_out, y_out, output, input) \
-        private(x_0, x_1, y_0, y_1, f_y_0_x_0, f_y_0_x_1, f_y_1_x_0,f_y_1_x_1, f_y_0_inter, f_y_1_inter, sum)
-    #pragma omp for
+    factor += 0.0001;
+
     for (int j = 0; j < y_out; ++j) {
         for (int i = 0; i < x_out; ++i) {
+            x_0 = (int)floor((i*1.)/factor);
+            x_1 = (int)ceil((i*1.)/factor);
+            if (x_1 == x) {
+                --x_1;
+            }
+            y_0 = (int)floor((j*1.)/factor);
+            y_1 = (int)ceil((j*1.)/factor);
+            printf("working on %i,%i with remote (%i to %i, %i to %i)\n", i, j, x_0, x_1, y_0, y_1);
             for (int c = 0; c < n; ++c) {
-                x_0 = (int)floor((i*1.)/factor);
-                x_1 = x_0 + 1;
-                y_0 = (int)floor((j*1.)/factor);
-                y_1 = y_0 + 1;
-
-
                 f_y_0_x_0 = input[y_0 * x*n + x_0*n + c];
                 f_y_0_x_1 = input[y_0 * x*n + x_1*n + c];
                 f_y_1_x_0 = input[y_1 * x*n + x_0*n + c];
                 f_y_1_x_1 = input[y_1 * x*n + x_1*n + c];
 
-                f_y_0_inter = f_y_0_x_0 + ((f_y_0_x_1 - f_y_0_x_0) / (x_1 - x_0)) * ((1.*i)/factor - x_0);
-                f_y_1_inter = f_y_1_x_0 + ((f_y_1_x_1 - f_y_1_x_0) / (x_1 - x_0)) * ((1.*i)/factor - x_0);
+//                f_y_0_inter = f_y_0_x_0 + ((f_y_0_x_1 - f_y_0_x_0) / (x_1 - x_0)) * ((1.*i)/factor - x_0);
+//                f_y_1_inter = f_y_1_x_0 + ((f_y_1_x_1 - f_y_1_x_0) / (x_1 - x_0)) * ((1.*i)/factor - x_0);
+//
+//                sum = f_y_0_inter + ((f_y_1_inter - f_y_0_inter) / (y_1 - y_0)) * ((1.*j)/factor - y_0);
 
-                sum = f_y_0_inter + ((f_y_1_inter - f_y_0_inter) / (y_1 - y_0)) * ((1.*j)/factor - y_0);
-
-//                if (x_0 != x_1) {
-//                    f_y_0_inter = f_y_0_x_0 + (f_y_0_x_1 - f_y_0_x_0) * ((i/factor - x_0)/(x_1 - x_0));
-//                    f_y_1_inter = f_y_1_x_0 + (f_y_1_x_1 - f_y_1_x_0) * ((i/factor - x_0)/(x_1 - x_0));
-//                } else {
-//                    f_y_0_inter = f_y_0_x_0;
-//                    f_y_1_inter = f_y_1_x_0;
-//                }
-//                if (y_0 != y_1) {
-//                    sum = f_y_0_inter + (f_y_1_inter - f_y_0_inter) * ((j/factor - y_0) / (y_1 - y_0));
-//                }  else {
-//                    sum = f_y_0_inter;
-//                }
+                if (x_0 != x_1) {
+                    f_y_0_inter = f_y_0_x_0 + (f_y_0_x_1 - f_y_0_x_0) * ((i/factor - x_0)/(x_1 - x_0));
+                    f_y_1_inter = f_y_1_x_0 + (f_y_1_x_1 - f_y_1_x_0) * ((i/factor - x_0)/(x_1 - x_0));
+                } else {
+                    f_y_0_inter = f_y_0_x_0;
+                    f_y_1_inter = f_y_1_x_0;
+                }
+                if (y_0 != y_1) {
+                    sum = f_y_0_inter + (f_y_1_inter - f_y_0_inter) * ((j/factor - y_0) / (y_1 - y_0));
+                }  else {
+                    sum = f_y_0_inter;
+                }
 
                 output[((j) * x_out*n + i*n + c)] = (unsigned char) sum;
             }
