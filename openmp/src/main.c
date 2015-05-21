@@ -181,23 +181,23 @@ int image_demo(char *path, int save) {
     printf("sharpen threaded:\t%f\n", elapsed);
 
 
-    apply_kernel_to_image(data, output, x, y, n, 1, (double*) &soft_sharpen_kernel, 3);
-    if (save && stbi_write_png("image_soft_sharpend.png", x, y, n, output, 0) == 0){
-        perror("Error saving file");
-        return -1;
-    }
+//    apply_kernel_to_image(data, output, x, y, n, 1, (double*) &soft_sharpen_kernel, 3);
+//    if (save && stbi_write_png("image_soft_sharpend.png", x, y, n, output, 0) == 0){
+//        perror("Error saving file");
+//        return -1;
+//    }
 //    apply_kernel_to_image(data, output, x, y, n, 1, (double*) &sharpen_kernel, 3);
 //    if (save && stbi_write_png("image_sharpend.png", x, y, n, output, 0) == 0){
 //        perror("Error saving file");
 //        return -1;
 //    }
-    double *mykernel = generate_kernel(5,0.8,0);
-    apply_kernel_to_image(data, output, x, y, n, 1, mykernel, 11);
-    if (save && stbi_write_png("image_custom.png", x, y, n, output, 0) == 0){
-        perror("Error saving file");
-        return -1;
-    }
-    free(mykernel);
+//    double *mykernel = generate_kernel(5,0.8,0);
+//    apply_kernel_to_image(data, output, x, y, n, 1, mykernel, 11);
+//    if (save && stbi_write_png("image_custom.png", x, y, n, output, 0) == 0){
+//        perror("Error saving file");
+//        return -1;
+//    }
+//    free(mykernel);
 //    apply_kernel_to_image(data, output, x, y, n, 1, (double*) &gauss_kernel, 7);
 //    if (save && stbi_write_png("image_gauss.png", x, y, n, output, 0) == 0){
 //        perror("Error saving file");
@@ -207,7 +207,7 @@ int image_demo(char *path, int save) {
     double s = 2;
     unsigned char *output_upscale = malloc((size_t) (x*s * y*s * n));
     clock_gettime(CLOCK_REALTIME, &start);
-    upscale_lanczos2(data, output_upscale, x, y, n, 1, s);
+    upscale_lanczos(data, output_upscale, x, y, n, 1, s);
     clock_gettime(CLOCK_REALTIME, &finish);
     elapsed = (finish.tv_sec - start.tv_sec);
     elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
