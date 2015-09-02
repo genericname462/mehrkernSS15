@@ -6,7 +6,7 @@
 
 Small maze solved by 8 threads.
 
-[Animated](http://a.pomf.se/hjqopf.gif)
+[Animated](http://b.1339.cf/nejuabf.gif)
 
 [Big version](http://b.1339.cf/azapqsi.png)
 
